@@ -48,7 +48,7 @@ void setup() {
 	LN.setLoglevel(LoggerNode::DEBUG);
 
 	// Display and UI
-//	display.setLogBuffer(4,200);
+	display.setLogBuffer(5,200);
 
 	ui.setTargetFPS(10);
 	ui.setFrameAnimation(SLIDE_LEFT);
@@ -58,7 +58,7 @@ void setup() {
 	display.flipScreenVertically();
 
 	// Homie
-	Homie.setLoggingPrinter(&Serial);
+	Homie.setLoggingPrinter(&display);
 	Homie.onEvent([](HomieEvent event) {status.Event(event);});
 	Homie.setup();
 

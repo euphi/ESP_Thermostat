@@ -6,9 +6,10 @@
  */
 
 #include <ThermostatCtrl.h>
+#include <gfx_resources.h>
 
 ThermostatCtrl::ThermostatCtrl(const SensorNode& sens): \
-  HomieNode("Thermostat", "thermostat"), sensor(sens)
+  HomieNode("Thermostat", "thermostat"), sensor(sens), setTemp(22.5)
 {
 	advertise("SetTemp")->settable();
 }
@@ -18,18 +19,58 @@ bool ThermostatCtrl::handleInput(const String& property, HomieRange range,
 	return false;
 }
 
-void ThermostatCtrl::drawFrame(OLEDDisplay& display, OLEDDisplayUiState& state, int16_t x, int16_t y) {
-	display.setFont(ArialMT_Plain_24);
-	display.setTextAlignment(TEXT_ALIGN_CENTER);
-	String temp(sensor.getTemperatur());
-	temp.concat("°C");
-	display.drawString(63+x,16+y, temp);
-	display.setFont(ArialMT_Plain_16);
-	String hum(sensor.getHumidity());
-	hum.concat("% rel");
+void ThermostatCtrl::drawFrame(OLEDDisplay& display, OLEDDisplayUiState& UIstate, int16_t x, int16_t y) {
+	bool blink = ((millis()>>8) % 2) == 0;
 
-	display.drawString(63+x,42+y, hum);
-	display.setTextAlignment(TEXT_ALIGN_LEFT);
+	String temp(sensor.getTemperatur());
+	String hum(sensor.getHumidity());
+	String setTempStr(setTemp);
+
+	switch (Machine::state()) {
+
+	case THERM_10_SHOWTEMP:
+		display.setFont(ArialMT_Plain_24);
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
+		temp.concat("°C");
+		display.drawString(63 + x, 16 + y, temp);
+		display.setFont(ArialMT_Plain_16);
+		hum.concat("% rel");
+
+		display.drawString(63 + x, 42 + y, hum);
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		break;
+
+	case THERM_20_SHOW_SETTEMP:
+		blink = true;
+		/* no break */
+	case THERM_30_CHANGE_SETTEMP:
+		if (blink) {
+			display.setFont(ArialMT_Plain_24);
+			display.setTextAlignment(TEXT_ALIGN_CENTER);
+			setTempStr.concat("°C");
+			display.drawString(63 + x, 16 + y, setTempStr);
+		}
+		display.setFont(ArialMT_Plain_16);
+		temp.concat("°C / ");
+		temp.concat(sensor.getHumidity());
+		temp.concat("%");
+		display.drawString(63 +x, 45, temp);
+		break;
+
+	case THERM_40_LOG:
+		display.setFont(Dialog_plain_7);
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawLogBuffer(0,16);
+		break;
+
+	case THERM_50_SETTINGS:
+		display.setFont(ArialMT_Plain_24);
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
+		display.drawString(63,16,"Settings");
+		break;
+
+	}
+
 }
 
 void ThermostatCtrl::drawOverlay(OLEDDisplay& display,
@@ -43,12 +84,12 @@ void ThermostatCtrl::drawOverlay(OLEDDisplay& display,
 ThermostatCtrl& ThermostatCtrl::begin() {
   // clang-format off
   const static state_t state_table[] PROGMEM = {
-    /*                                               ON_ENTER  ON_LOOP  ON_EXIT                 EVT_PREV                 EVT_NEXT              EVT_ENTER  ELSE */
-    /*       THERM_10_SHOWTEMP */                          -1,      -1,      -1,       THERM_50_SETTINGS, THERM_30_CHANGE_SETTEMP, THERM_20_SHOW_SETTEMP,   -1,
-    /*   THERM_20_SHOW_SETTEMP */                          -1,      -1,      -1, THERM_30_CHANGE_SETTEMP, THERM_30_CHANGE_SETTEMP,          THERM_40_LOG,   -1,
-    /* THERM_30_CHANGE_SETTEMP */ ENT_THERM_30_CHANGE_SETTEMP,      -1,      -1, THERM_30_CHANGE_SETTEMP, THERM_30_CHANGE_SETTEMP, THERM_20_SHOW_SETTEMP,   -1,
-    /*            THERM_40_LOG */                          -1,      -1,      -1,            THERM_40_LOG,            THERM_40_LOG,     THERM_50_SETTINGS,   -1,
-    /*       THERM_50_SETTINGS */                          -1,      -1,      -1,       THERM_50_SETTINGS,       THERM_50_SETTINGS,     THERM_10_SHOWTEMP,   -1,
+    /*                                               ON_ENTER  ON_LOOP  ON_EXIT                                   EVT_PREV                 EVT_NEXT              EVT_ENTER  ELSE */
+    /*       THERM_10_SHOWTEMP */                          -1,      -1,      -1,                          THERM_50_SETTINGS,       THERM_30_CHANGE_SETTEMP, THERM_20_SHOW_SETTEMP,   -1,
+    /*   THERM_20_SHOW_SETTEMP */                          -1,      -1,      -1,                          THERM_30_CHANGE_SETTEMP, THERM_30_CHANGE_SETTEMP, THERM_40_LOG,            -1,
+    /* THERM_30_CHANGE_SETTEMP */ ENT_THERM_30_CHANGE_SETTEMP,      -1,      EXT_THERM_30_CHANGE_SETTEMP, THERM_30_CHANGE_SETTEMP, THERM_30_CHANGE_SETTEMP, THERM_20_SHOW_SETTEMP,   -1,
+    /*            THERM_40_LOG */                          -1,      -1,      -1,                          THERM_40_LOG,            THERM_40_LOG,            THERM_50_SETTINGS,       -1,
+    /*       THERM_50_SETTINGS */                          -1,      -1,      -1,                          THERM_50_SETTINGS,       THERM_50_SETTINGS,       THERM_10_SHOWTEMP,       -1,
   };
   // clang-format on
 	encoder.begin(12, 13, 4);
@@ -88,11 +129,19 @@ int ThermostatCtrl::event( int id ) {
  * This generates the 'output' for the state machine
  */
 
-void ThermostatCtrl::action( int id ) {
-  switch ( id ) {
-    case ENT_THERM_30_CHANGE_SETTEMP:
-      return;
-  }
+void ThermostatCtrl::action(int id) {
+//	switch (id) {
+//	case ENT_THERM_30_CHANGE_SETTEMP:
+//		encoder.onChange(true, *this, EVT_MORE);
+//		encoder.onChange(false, *this, EVT_LESS);
+//		button.onPress(*this, EVT_ENTER);
+//		return;
+//
+//	case EXT_THERM_30_CHANGE_SETTEMP:
+//		encoder.onChange(true, *this, EVT_NEXT);
+//		encoder.onChange(false, *this, EVT_PREV);
+//		return;
+//	}
 }
 
 ///* Optionally override the default trigger() method

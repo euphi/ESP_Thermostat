@@ -43,9 +43,11 @@ public:
 // ThermostatCtrl& enter( void );
 
 private:
- enum { ENT_THERM_30_CHANGE_SETTEMP }; // ACTIONS
+ enum { ENT_THERM_30_CHANGE_SETTEMP, EXT_THERM_30_CHANGE_SETTEMP }; // ACTIONS
  int event( int id );
  void action( int id );
+
+ float setTemp;
 
  Atm_encoder encoder;
  Atm_button button;

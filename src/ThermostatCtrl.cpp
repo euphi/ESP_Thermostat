@@ -8,15 +8,32 @@
 #include <ThermostatCtrl.h>
 #include <gfx_resources.h>
 
+#include <LoggerNode.h>
+#include <Homie.hpp>
+
 ThermostatCtrl::ThermostatCtrl(const SensorNode& sens): \
   HomieNode("Thermostat", "thermostat"), sensor(sens), setTemp(22.5)
 {
 	advertise("SetTemp")->settable();
 }
 
-bool ThermostatCtrl::handleInput(const String& property, HomieRange range,
-		const String& value) {
-	return false;
+bool ThermostatCtrl::handleInput(const String& property, HomieRange range,	const String& value) {
+	if (property.equals("SetTemp"))
+	{
+		float newSetTemp = value.toFloat();
+		if (newSetTemp < 15 || newSetTemp > 30) {
+			LN.logf(__PRETTY_FUNCTION__, LoggerNode::ERROR, "Received invalid value for property SetTemp: %f", newSetTemp);
+			return false;
+		}
+		setTemp = newSetTemp;
+		LN.logf(__PRETTY_FUNCTION__, LoggerNode::INFO, "Updated SetTemp to %f.", newSetTemp);
+		return true;
+	}
+	else
+	{
+		LN.logf(__PRETTY_FUNCTION__, LoggerNode::ERROR, "Received invalid property %s with value %s.", property.c_str(), value.c_str());
+		return false;
+	}
 }
 
 void ThermostatCtrl::drawFrame(OLEDDisplay& display, OLEDDisplayUiState& UIstate, int16_t x, int16_t y) {
@@ -41,12 +58,12 @@ void ThermostatCtrl::drawFrame(OLEDDisplay& display, OLEDDisplayUiState& UIstate
 		break;
 
 	case THERM_20_SHOW_SETTEMP:
-		blink = true;
+		blink = true;  // alway true --> no blinking
 		/* no break */
 	case THERM_30_CHANGE_SETTEMP:
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
 		if (blink) {
 			display.setFont(ArialMT_Plain_24);
-			display.setTextAlignment(TEXT_ALIGN_CENTER);
 			setTempStr.concat("°C");
 			display.drawString(63 + x, 16 + y, setTempStr);
 		}
@@ -149,10 +166,14 @@ void ThermostatCtrl::action(int id) {
 // */
 //
 ThermostatCtrl& ThermostatCtrl::trigger( int event ) {
-  Serial.println("Event triggered");
-  Serial.flush();
-  Serial.printf("No: %02x", event);
-  Serial.flush();
+  if (Machine::state() == THERM_30_CHANGE_SETTEMP && (event != EVT_ENTER))
+  {
+	  if (event == EVT_NEXT) setTemp -= 0.1;
+	  else if (event == EVT_PREV) setTemp +=0.1;
+	  String setTempStr(setTemp);
+	  Homie.setNodeProperty(*this,"SetTemp",setTempStr);
+	  return *this;
+  }
   Machine::trigger( event );
   return *this;
 }
